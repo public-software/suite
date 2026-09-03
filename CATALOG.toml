@@ -1,0 +1,24 @@
+# Machine-readable entry for this repository. Aggregated into public-software/catalog.
+# Edit here; `pub catalog sync` propagates description, topics and custom properties to GitHub.
+
+[repo]
+name        = "suite"
+ring        = "spine"          # spine | platform | system | domain | standards
+layers      = ["all"]
+wave        = 1
+tier        = "incubating"        # incubating | stable | core | archived
+maintainers = ["maint-suite"]
+summary     = "The superproject: lockfile pinning every crate, nightly whole-suite build, compatibility matrix, release trains, reference images."
+
+# One [[component]] per crate, app or service this workspace publishes.
+# planned: Cargo.lock · compat-matrix · release notes assembler · reference platform images
+#
+# [[component]]
+# crate     = "pub-suite-example"
+# kind      = "lib"                # lib | app | service | plugin | spec
+# ledger    = "<ledger entry name>"
+# readiness = "none"               # shipped | partial | seed | none
+# effort    = 3
+# specs     = []
+# provides  = ["public:area/iface@1"]
+# requires  = []
