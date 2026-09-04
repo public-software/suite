@@ -117,12 +117,14 @@ pub struct Origin {
     pub caller: String,
     /// The caller job, the first half of the check-run name.
     pub caller_job: String,
-    /// The reusable workflow file the caller job uses.
+    /// The reusable workflow file the caller job uses; the caller itself for a job it runs directly.
     pub workflow: String,
-    /// The reusable job id.
+    /// The reusable job id, or the caller's own job id.
     pub job: String,
     /// The events the caller workflow triggers on.
     pub events: BTreeSet<String>,
+    /// The caller runs the job itself (no reusable workflow): the check run is named by that job alone.
+    pub own: bool,
 }
 
 /// A check run a caller produces.
@@ -213,7 +215,7 @@ impl fmt::Display for Report {
         writeln!(f, "required status checks: {}", self.required.len())?;
         for context in &self.required {
             match self.producer(context) {
-                Some(run) if run.origin.workflow == run.origin.caller => writeln!(
+                Some(run) if run.origin.own => writeln!(
                     f,
                     "  {context:<20} {}: job {}",
                     run.origin.caller, run.origin.job
@@ -355,6 +357,7 @@ pub fn check_runs(callers: &[Source], workflows: &[Source]) -> Result<Vec<CheckR
                         workflow: source.name.clone(),
                         job: job_id.to_owned(),
                         events: caller_events.clone(),
+                        own: false,
                     },
                 });
             }
@@ -377,6 +380,7 @@ fn own_check_run(caller: &Source, job_id: &str, job: &Yaml, events: &BTreeSet<St
             workflow: caller.name.clone(),
             job: job_id.to_owned(),
             events: events.clone(),
+            own: true,
         },
     }
 }
@@ -463,12 +467,12 @@ fn hint(context: &str, produced: &[CheckRun]) -> String {
     let (caller_job, job_name) = context
         .split_once(CONTEXT_SEPARATOR)
         .unwrap_or(("", context));
-    // a context without the separator names a caller's own job, whose origin is the caller itself
-    let own = caller_job.is_empty();
+    // a context without the separator names a job a caller runs itself
+    let bare = caller_job.is_empty();
     if let Some(run) = produced.iter().find(|run| {
         run.origin.job == job_name
-            && if own {
-                run.origin.workflow == run.origin.caller
+            && if bare {
+                run.origin.own
             } else {
                 run.origin.caller_job == caller_job
             }
@@ -613,6 +617,9 @@ jobs:
         assert_eq!(run.origin.caller, "conformance.yml");
         assert_eq!(run.origin.workflow, "conformance.yml");
         assert_eq!(run.origin.job, "conformance");
+        assert!(run.origin.own);
+        // a caller and a reusable workflow may share a file name (review.yml calls review.yml): only the flag says own
+        assert!(!report.producer("suite / deny").unwrap().origin.own);
         assert!(
             report
                 .to_string()
