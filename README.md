@@ -13,16 +13,30 @@ Planned components: Cargo.lock · compat-matrix · release notes assembler · re
 
 ## In 30 seconds
 
-_A runnable example goes here the day the first crate lands._
+The first crate is the guard of the CI contract. Every repository's `main` requires the status checks `suite / <job>`: the check runs the job `suite` of its `ci.yml` and `review.yml` produces by calling the reusable workflows of [`public-software/.github`](https://github.com/public-software/.github). A job renamed in `rust.yml` silently blocks every pull request of every repository, and a caller that does not trigger on `merge_group` leaves a queue entry waiting forever. [`pub-suite-conformance`](crates/pub-suite-conformance) reads the callers, the reusable workflows and the rules GitHub applies to `main`, and fails when a required check is not a check run the callers produce on `pull_request` and `merge_group` alike:
+
+```sh
+gh api repos/public-software/suite/rules/branches/main > rules.json
+git clone --depth 1 https://github.com/public-software/.github ../dotgithub
+cargo run -p pub-suite-conformance -- --callers .github/workflows --workflows ../dotgithub/.github/workflows --rules rules.json
+```
+
+`conformance.yml` runs it on every pull request and in the merge queue, against the release of the reusable workflows this repository's `ci.yml` pins; `lint.yml` of `public-software/.github` runs it against the workflows under review there.
 
 ## What it does
 
+- `crates/pub-suite-conformance`: the check-run contract between the reusable workflows, the merge queue and the rulesets.
+- `Cargo.lock` and `supply-chain/`: every dependency pinned and audited or exempted; `cargo vet --locked` is a required check, and it also demands the store in `cargo vet fmt`'s canonical form, so the files carry no comments. The exemptions (yaml-rust2, hashlink, hashbrown; arraydeque and foldhash are audited by the Mozilla and Google pools) are regenerated with `cargo vet regenerate exemptions` after a dependency change and dropped one by one as audits appear.
+
 ## What it does not do (yet)
+
+The suite lockfile pinning every crate of every repository, the nightly whole-suite build, the compatibility matrix, the release trains and the reference images.
 
 ## Status
 
 | Ledger entry | Readiness | Next |
 |---|---|---|
+| ci-conformance | partial | a suite-only ruleset requiring the `conformance` check |
 
 ## How it fits the suite
 

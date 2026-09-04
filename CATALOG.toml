@@ -12,13 +12,15 @@ summary     = "The superproject: lockfile pinning every crate, nightly whole-sui
 
 # One [[component]] per crate, app or service this workspace publishes.
 # planned: Cargo.lock · compat-matrix · release notes assembler · reference platform images
-#
-# [[component]]
-# crate     = "pub-suite-example"
-# kind      = "lib"                # lib | app | service | plugin | spec
-# ledger    = "<ledger entry name>"
-# readiness = "none"               # shipped | partial | seed | none
-# effort    = 3
-# specs     = []
-# provides  = ["public:area/iface@1"]
-# requires  = []
+
+# The conformance command: proves the reusable workflows of public-software/.github produce every check run the
+# rulesets require, on pull requests and in the merge queue alike (crates/pub-suite-conformance).
+[[component]]
+crate     = "pub-suite-conformance"
+kind      = "app"
+ledger    = "ci-conformance"
+readiness = "partial"
+effort    = 1
+specs     = []
+provides  = []
+requires  = []

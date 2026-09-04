@@ -1,0 +1,45 @@
+# The check-run contract, proven on every change: the conformance crate reads this repository's caller workflows,
+# the reusable workflows of public-software/.github at the release ci.yml pins, and the rules GitHub applies to main, and
+# fails when a required check is not a check run the callers produce on pull_request and merge_group alike. One
+# check run, "conformance", on the pull request and in the merge queue; suite / * (ci.yml) still runs.
+name: conformance
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  conformance:
+    name: conformance
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}   # the branch rules of a public repository, read with the job's own token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: The release of the reusable workflows ci.yml pins
+        id: pin
+        run: |
+          set -euo pipefail
+          ref="$(sed -nE 's|.*uses: [^ ]*/\.github/\.github/workflows/rust\.yml@([^ ]+).*|\1|p' .github/workflows/ci.yml | head -n1)"
+          [ -n "$ref" ] || { echo "::error::.github/workflows/ci.yml does not pin rust.yml"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: The reusable workflows at that release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: public-software/.github
+          ref: ${{ steps.pin.outputs.ref }}
+          path: .dotgithub
+          persist-credentials: false
+      - run: rustup update --no-self-update stable && rustup default stable   # the runner ships rustup
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: The rules GitHub applies to main
+        env:
+          REPO: ${{ github.repository }}
+        run: gh api "repos/$REPO/rules/branches/main" > "$RUNNER_TEMP/rules.json"
+      - name: Every required check is a check run the callers produce, on pull requests and in the merge queue
+        run: >
+          cargo run --locked -p pub-suite-conformance --
+          --callers .github/workflows --workflows .dotgithub/.github/workflows --rules "$RUNNER_TEMP/rules.json"
