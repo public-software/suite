@@ -213,6 +213,11 @@ impl fmt::Display for Report {
         writeln!(f, "required status checks: {}", self.required.len())?;
         for context in &self.required {
             match self.producer(context) {
+                Some(run) if run.origin.workflow == run.origin.caller => writeln!(
+                    f,
+                    "  {context:<20} {}: job {}",
+                    run.origin.caller, run.origin.job
+                )?,
                 Some(run) => writeln!(
                     f,
                     "  {context:<20} {}: {} -> {}: {}",
@@ -303,8 +308,8 @@ pub fn required_contexts(rules: &Source) -> Result<BTreeSet<String>, Error> {
     Ok(contexts)
 }
 
-/// Every check run the `callers` produce through the reusable `workflows`: one per reusable job of every
-/// caller job that `uses:` a workflow, named `<caller job> / <reusable job name>`.
+/// Every check run the `callers` produce: one per reusable job of every caller job that `uses:` a workflow,
+/// named `<caller job> / <reusable job name>`, and one per job a caller runs itself, named by that job.
 ///
 /// # Errors
 ///
@@ -321,6 +326,7 @@ pub fn check_runs(callers: &[Source], workflows: &[Source]) -> Result<Vec<CheckR
         let caller_events = events(&doc);
         for (caller_job, job) in jobs(&doc) {
             let Some(used) = job["uses"].as_str().and_then(used_workflow) else {
+                runs.push(own_check_run(caller, caller_job, job, &caller_events));
                 continue;
             };
             let (source, reusable) = parsed
@@ -355,6 +361,24 @@ pub fn check_runs(callers: &[Source], workflows: &[Source]) -> Result<Vec<CheckR
         }
     }
     Ok(runs)
+}
+
+/// The check run a caller's own job produces (no reusable workflow): GitHub names it by the job's `name:`, or
+/// its id; the workflow of its origin is the caller itself.
+fn own_check_run(caller: &Source, job_id: &str, job: &Yaml, events: &BTreeSet<String>) -> CheckRun {
+    let name = job["name"].as_str().unwrap_or(job_id).to_owned();
+    let context = (!is_run_dependent(&name, job)).then(|| name.clone());
+    CheckRun {
+        context,
+        name,
+        origin: Origin {
+            caller: caller.name.clone(),
+            caller_job: job_id.to_owned(),
+            workflow: caller.name.clone(),
+            job: job_id.to_owned(),
+            events: events.clone(),
+        },
+    }
 }
 
 /// The first document of a source.
@@ -439,10 +463,16 @@ fn hint(context: &str, produced: &[CheckRun]) -> String {
     let (caller_job, job_name) = context
         .split_once(CONTEXT_SEPARATOR)
         .unwrap_or(("", context));
-    if let Some(run) = produced
-        .iter()
-        .find(|run| run.origin.caller_job == caller_job && run.origin.job == job_name)
-    {
+    // a context without the separator names a caller's own job, whose origin is the caller itself
+    let own = caller_job.is_empty();
+    if let Some(run) = produced.iter().find(|run| {
+        run.origin.job == job_name
+            && if own {
+                run.origin.workflow == run.origin.caller
+            } else {
+                run.origin.caller_job == caller_job
+            }
+    }) {
         return match run.context {
             Some(_) => format!(
                 "job {job_name} of {} is named \"{}\"",
@@ -551,6 +581,79 @@ jobs:
             &[("rust.yml", RUST), ("review.yml", REVIEW_WORKFLOW)],
             RULESET,
         )
+    }
+
+    /// A caller whose job runs on its own (no reusable workflow): the check run is named by the job.
+    const OWN: &str = "name: conformance
+on:
+  push: { branches: [main] }
+  pull_request:
+  merge_group:
+jobs:
+  conformance:
+    name: conformance
+    runs-on: ubuntu-latest
+";
+    /// The rules a repository with its own check carries: the branch-rules array shape.
+    const OWN_RULES: &str = r#"[{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "suite / deny"}, {"context": "conformance"}]}}]"#;
+
+    fn own(conformance: &str) -> Report {
+        report(
+            &[("ci.yml", CI), ("conformance.yml", conformance)],
+            &[("rust.yml", RUST)],
+            OWN_RULES,
+        )
+    }
+
+    #[test]
+    fn a_callers_own_job_is_the_check_run_named_by_its_name() {
+        let report = own(OWN);
+        assert!(report.is_clean(), "{:?}", report.findings);
+        let run = report.producer("conformance").unwrap();
+        assert_eq!(run.origin.caller, "conformance.yml");
+        assert_eq!(run.origin.workflow, "conformance.yml");
+        assert_eq!(run.origin.job, "conformance");
+        assert!(
+            report
+                .to_string()
+                .contains("conformance.yml: job conformance"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn a_renamed_own_job_is_missing_with_its_new_name() {
+        let renamed = OWN.replace("    name: conformance", "    name: contract");
+        let report = own(&renamed);
+        let [Finding::Missing { context, hint }] = report.findings.as_slice() else {
+            panic!("{:?}", report.findings);
+        };
+        assert_eq!(context, "conformance");
+        assert!(hint.contains("contract"), "{hint}");
+    }
+
+    #[test]
+    fn an_own_job_with_a_matrix_is_run_dependent() {
+        let legs = OWN.replace(
+            "    runs-on: ubuntu-latest\n",
+            "    strategy: { matrix: { os: [ubuntu-latest, macos-latest] } }\n    runs-on: ${{ matrix.os }}\n",
+        );
+        let report = own(&legs);
+        assert!(report.producer("conformance").is_none());
+        assert!(matches!(
+            report.findings.as_slice(),
+            [Finding::Missing { .. }]
+        ));
+    }
+
+    #[test]
+    fn an_own_job_without_merge_group_is_a_finding_too() {
+        let unqueued = OWN.replace("  merge_group:\n", "");
+        let report = own(&unqueued);
+        assert!(matches!(
+            report.findings.as_slice(),
+            [Finding::NotInMergeQueue { context, caller }] if context == "conformance" && caller == "conformance.yml"
+        ));
     }
 
     fn contexts(findings: &[Finding]) -> Vec<&str> {

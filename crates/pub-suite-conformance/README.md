@@ -2,7 +2,7 @@
 
 The `conformance` command of [suite](https://github.com/public-software/suite), part of Public Software. Kind: `app`; the binary is `conformance`.
 
-A ruleset requires status checks by name, and the name of a check run a reusable workflow produces is `<caller job id> / <reusable job name>`: `suite / deny` is the job `deny` of `rust.yml`, called from the job `suite` of a repository's `ci.yml`. Nothing on GitHub ties the two together, so a renamed job in `rust.yml` leaves every pull request of every repository waiting forever for a check that no longer exists. This crate reads the three inputs and fails when they disagree:
+A ruleset requires status checks by name, and the name of a check run a reusable workflow produces is `<caller job id> / <reusable job name>`: `suite / deny` is the job `deny` of `rust.yml`, called from the job `suite` of a repository's `ci.yml`. A job a repository runs directly is the check run named by that job: `conformance` is the job `conformance` of this repository's `conformance.yml`, which the suite-only ruleset requires. Nothing on GitHub ties the two together, so a renamed job in `rust.yml` leaves every pull request of every repository waiting forever for a check that no longer exists. This crate reads the three inputs and fails when they disagree:
 
 ```sh
 conformance --callers .github/workflows                     # a repository's own workflows: the jobs that `uses:` a reusable one

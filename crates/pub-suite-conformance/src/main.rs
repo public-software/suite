@@ -20,7 +20,7 @@ const BROKEN: u8 = 1;
 const UNUSABLE: u8 = 2;
 /// What `--help` and a wrong command line print.
 const USAGE: &str = "usage: conformance --callers <dir> --workflows <dir> --rules <file>
-  --callers    a repository's own .github/workflows: the jobs that `uses:` a reusable workflow name the check runs
+  --callers    a repository's own .github/workflows: a job that `uses:` a reusable workflow names one check run per reusable job, a job run directly names its own
   --workflows  the reusable workflows of the .github repository (rust.yml, review.yml)
   --rules      a ruleset file, or what `gh api repos/<org>/<repo>/rules/branches/main` answers";
 /// What `--version` prints.
